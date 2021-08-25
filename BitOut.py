@@ -8,6 +8,7 @@ class BitOutputStream:
         self.CRC8_TABLE = []
         self.CRC16_TABLE = []
         self.Initialize_CRC()
+        self.prederr = []
 
     def reset_crcs(self):
         self.crc8 = 0

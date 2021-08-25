@@ -5,6 +5,10 @@ from Reader import *
 from Rice import Ricer
 import numpy as np
 import soundfile as sf
+from bitstream import BitStream
+import struct
+import math
+import Predictor as predictor
 
 #standard block size
 BLOCK_SIZE = 4096
@@ -49,15 +53,32 @@ def encode_file(binary_input, out):
 
 
     numsamples = sampledatalen // (numchannels * (sampledepth // 8))
-
-    
-    # Read raw samples and encode FLAC audio frames
+    numblocks = int(math.ceil(numsamples/BLOCK_SIZE))
+  
     i = 0
+    errors = []
     while numsamples > 0:
         blocksize = min(numsamples, BLOCK_SIZE)
         encodeFrame(binary_input, i, numchannels, sampledepth, samplerate, blocksize, out)
         numsamples -= blocksize
         i += 1
+        
+    prederror = np.asarray(out.prederr)
+    avg = np.vectorize(np.mean)
+    meanabs = avg(np.abs(prederror),axis=0) 
+    ricecoefff=np.clip(np.floor(np.log2(meanabs)),0,None) 
+    ricecoeffc=np.clip(np.ceil(np.log2((meanabs+1)*2/3)),0,None) 
+    ricecoeff=np.round((ricecoeffc+ricecoefff)/2.0).astype(np.int8) 
+    s=struct.pack('b'*int(len(ricecoeff)),*ricecoeff)
+    
+    
+    
+ 
+    
+    
+    
+        
+
 
 
 def encodeFrame(binary_input, frameindex, numchannels, sampledepth, samplerate, blocksize, out):
@@ -75,30 +96,29 @@ def encodeFrame(binary_input, frameindex, numchannels, sampledepth, samplerate, 
             else:
                 val -= (val >> (sampledepth - 1)) << sampledepth
             
-            channelSamples.append(val)  
-            
+            channelSamples.append(val*1.0) 
+                      
 
     for chansamples in samples:
-        encode_subframe(chansamples, sampledepth, out)
-	
-
- 
-def encode_subframe(samples, sampledepth, out):
-
-    for x in samples:
-        val = Ricer(x,4)
-        print(val)
+        ''' Encodes sub frame'''
+        L = 10 #predictor
+        h=np.zeros(L)
+        e = predictor.nlmslosslesspredenc(chansamples,L,h)
+        out.prederr.append(e) 
+    
         
-   
-        
-
             
    
+        
+        
+        
+  
+ 
+
+
+    
     
 
-
-
-    
         
 
         
