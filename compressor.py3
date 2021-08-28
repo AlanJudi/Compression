@@ -53,17 +53,29 @@ def encode_file(binary_input, out):
     sampledatalen = ConvertToSmallInt(binary_input, 4)
     CheckFile(sampledatalen <= 0 or sampledatalen % (numchannels * (sampledepth // 8)) != 0, "Invalid length of audio sample data")
 
-  
+    # Start writing FLAC file header and stream info metadata block
+    out.writeInt(32, 0x664C6143)
+    out.writeInt(1, 1)
+    out.writeInt(7, 0)
+    out.writeInt(24, 34)
+    out.writeInt(16, BLOCK_SIZE)
+    out.writeInt(16, BLOCK_SIZE)
+    out.writeInt(24, 0)
+    out.writeInt(24, 0)
+    out.writeInt(20, samplerate)
+    out.writeInt(3, numchannels - 1)
+    out.writeInt(5, sampledepth - 1)
  
     numsamples = sampledatalen // (numchannels * (sampledepth // 8))
     
     
-    
+    out.writeInt(36, numsamples)
+    for _ in range(16):
+        out.writeInt(8, 0)
     
         
     numblocks = int(math.ceil(numsamples/BLOCK_SIZE))
     
-    out.prederr = [[] for _ in range(numchannels)]
   
     i = 0
     while numsamples > 0:
@@ -92,7 +104,21 @@ def encodeFrame(binary_input, frameindex, numchannels, sampledepth, samplerate, 
             
             channelSamples.append(val*1.0) 
             
-    
+    out.reset_crcs()
+    out.writeInt(14, 0x3FFE)
+    out.writeInt(1, 0)
+    out.writeInt(1, 0)
+    out.writeInt(4, 7)
+    out.writeInt(4, (14 if samplerate % 10 == 0 else 13))
+    out.writeInt(4, numchannels - 1)
+    out.writeInt(3, {8:1, 16:4, 24:6, 32:0}[sampledepth])
+    out.writeInt(1, 0)
+    out.writeInt(8, 0xFC | (frameindex >> 30))
+    for i in range(24, -1, -6):
+        out.writeInt(8, 0x80 | ((frameindex >> i) & 0x3F))
+    out.writeInt(16, blocksize - 1)
+    out.writeInt(16, samplerate // (10 if samplerate % 10 == 0 else 1))
+    out.writeInt(8, out.crc8)
     
                     
 
@@ -102,17 +128,21 @@ def encodeFrame(binary_input, frameindex, numchannels, sampledepth, samplerate, 
         h=np.zeros(L)
         e = predictor.nlmslosslesspredenc(samples[i],L,h)
         
-        meanabs=np.mean(np.abs(e),axis=0)
-        ricecoefff=np.clip(np.floor(np.log2(meanabs)),0,None)
-        ricecoeffc=np.clip(np.ceil(np.log2((meanabs+1)*2/3)),0,None)
-        ricecoeff=np.round((ricecoeffc+ricecoefff)/2.0).astype(np.int8)
         
         e = np.concatenate((e, [0,0,0,0]), axis = 0)
         
+        out.writeInt(1, 0)
+        out.writeInt(6, 1)  
+        out.writeInt(1, 0)
+        
 
-        riced = Ricer(e, ricecoeff)
-        for i in riced:
-            print(i)
+        riced = Ricer(e, 4)
+        stream = BitStream(riced, np.int8)
+        prederrors=stream.read(bytes, np.floor(len(stream)/8.0))
+        out.out.write(prederrors)
+            
+    out.align_to_byte()
+    out.writeInt(16, out.crc16)
             
             
         
