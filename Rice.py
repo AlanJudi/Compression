@@ -1,34 +1,38 @@
 import math
 import numpy as np
+from bitstring import BitArray
+from golomb_coding import golomb_coding
+
+
 
 def Ricer(S, k):
     ''' Does Rice Encoding'''
     
-    if(S > 64 or S < -64):
-        return bin(S)
     
     M = 2**k;
-    R1 = S & (M -1)
-    R2 = S >> k
+    riced = []
+    for i in S:
+        sign = "0b"
+        if(i < 0):
+            sign = "-0b"
+            
+        unsigned_b = golomb_coding(abs(int(i)), M)
+        signed_b = sign + unsigned_b
+        riced.append(signed_b)
+        
+            
+             
+        
+        
+    return riced
+
 
     
-    if R2 < 0:
-        R2 = "-0b" + IntToUnary(np.abs(R2))
-    else :
-        R2 = "0b" + IntToUnary(np.abs(R2))
         
-    result = R2 + bin(R1)[2:2+k]
-    return result
+      
 
-def IntToUnary(n):
-    ''' Gets unary representation of number'''
-    A = []  
-    for i in range(n):
-        A.append(1)
 
-    A.append(0)
-    B = [str(k) for k in A]
-    return "".join(B)
+
     
     
         

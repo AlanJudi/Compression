@@ -1,3 +1,4 @@
+from os import X_OK
 import pathlib
 import sys
 from BitOut import BitOutputStream
@@ -6,6 +7,7 @@ from Rice import Ricer
 import numpy as np
 import soundfile as sf
 from bitstream import BitStream
+from golomb_coding import golomb_coding
 import struct
 import math
 import Predictor as predictor
@@ -51,33 +53,25 @@ def encode_file(binary_input, out):
     sampledatalen = ConvertToSmallInt(binary_input, 4)
     CheckFile(sampledatalen <= 0 or sampledatalen % (numchannels * (sampledepth // 8)) != 0, "Invalid length of audio sample data")
 
-
+  
+ 
     numsamples = sampledatalen // (numchannels * (sampledepth // 8))
+    
+    
+    
+    
+        
     numblocks = int(math.ceil(numsamples/BLOCK_SIZE))
+    
+    out.prederr = [[] for _ in range(numchannels)]
   
     i = 0
-    errors = []
     while numsamples > 0:
         blocksize = min(numsamples, BLOCK_SIZE)
         encodeFrame(binary_input, i, numchannels, sampledepth, samplerate, blocksize, out)
         numsamples -= blocksize
         i += 1
-        
-    prederror = np.asarray(out.prederr)
-    avg = np.vectorize(np.mean)
-    meanabs = avg(np.abs(prederror),axis=0) 
-    ricecoefff=np.clip(np.floor(np.log2(meanabs)),0,None) 
-    ricecoeffc=np.clip(np.ceil(np.log2((meanabs+1)*2/3)),0,None) 
-    ricecoeff=np.round((ricecoeffc+ricecoefff)/2.0).astype(np.int8) 
-    s=struct.pack('b'*int(len(ricecoeff)),*ricecoeff)
     
-    
-    
- 
-    
-    
-    
-        
 
 
 
@@ -97,16 +91,48 @@ def encodeFrame(binary_input, frameindex, numchannels, sampledepth, samplerate, 
                 val -= (val >> (sampledepth - 1)) << sampledepth
             
             channelSamples.append(val*1.0) 
-                      
+            
+    
+    
+                    
 
-    for chansamples in samples:
+    for i in range(len(samples)):
         ''' Encodes sub frame'''
         L = 10 #predictor
         h=np.zeros(L)
-        e = predictor.nlmslosslesspredenc(chansamples,L,h)
-        out.prederr.append(e) 
+        e = predictor.nlmslosslesspredenc(samples[i],L,h)
+        
+        meanabs=np.mean(np.abs(e),axis=0)
+        ricecoefff=np.clip(np.floor(np.log2(meanabs)),0,None)
+        ricecoeffc=np.clip(np.ceil(np.log2((meanabs+1)*2/3)),0,None)
+        ricecoeff=np.round((ricecoeffc+ricecoefff)/2.0).astype(np.int8)
+        
+        e = np.concatenate((e, [0,0,0,0]), axis = 0)
+        
+
+        riced = Ricer(e, ricecoeff)
+        for i in riced:
+            print(i)
+            
+            
+        
+        
+        
+        
+        
+
+
+        
+        
+        
+ 
+        
+     
     
         
+        
+        
+      
             
    
         
