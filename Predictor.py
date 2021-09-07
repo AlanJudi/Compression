@@ -11,7 +11,8 @@ def nlmslosslesspreddec(e,L,h):
         P = round(P)
         
         xrek[n] = e[n] + P
-        h = h + 1.0* e[n]* np.flipud(xrekvec) / 1.0 + np.dot(xrekvec,xrekvec)
+        h = h + 1.0* e[n]* np.flipud(xrekvec) / (0.1 + np.dot(xrekvec,xrekvec))
+
         
     return np.hstack((xrek[L:], np.zeros(L)))
 

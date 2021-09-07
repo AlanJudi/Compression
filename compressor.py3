@@ -122,43 +122,40 @@ def encodeFrame(binary_input, frameindex, numchannels, sampledepth, samplerate, 
     file.writeInt(16, samplerate // (10 if samplerate % 10 == 0 else 1))
     file.writeInt(8, file.crc8)
     
-                    
-
-    for i in range(len(samples)):
-        ''' Encodes sub frame'''
-        L = 10 #predictor
-        h=np.zeros(L)
-        e = predictor.nlmslosslesspredenc(samples[i],L,h)
-        
-
-        prederror=np.reshape(e, (blocksize+L), order='F')
-        
-        #Rice coefficient         
-        meanabs=np.mean(np.abs(prederror),axis=0)    
-        ricecoefff=np.clip(np.floor(np.log2(meanabs)),0,None)      
-        ricecoeffc=np.clip(np.ceil(np.log2((meanabs+1)*2/3)),0,None) 
-        ricecoeff=np.round((ricecoeffc+ricecoefff)/2.0).astype(np.int8) #integer, 8bit 
-        print("ricecoeff=", ricecoeff) 
-        file.writeInt(ricecoeff, 8)
         
         
-        prederror = np.concatenate((prederror, [0,0,0,0]), axis = 0)
-        
-        file.writeInt(1, 0)
-        file.writeInt(6, 1)  
-        file.writeInt(1, 0)
-
-        signedrice = Rice.rice_tag(ricecoeff, signed=True)
-        errors = np.concatenate((prederror, np.zeros((4,))), axis=0)
-        stream = bitstream.BitStream(errors.astype(np.int32), signedrice)
-        prederrors=stream.read(bytes, np.floor(len(stream)/8.0))
-        
-        pickle.dump(prederrors, file, None)
+    for chansamples in samples:
+    	encode_subframe(chansamples, sampledepth, file)
         
         
-            
-    file.align_to_byte()
+    file.align_to_byte()   
     file.writeInt(16, file.crc16)
+    
+def encode_subframe(samples, sampledepth, file):
+ 
+    ''' Encodes sub frame'''
+    L = 10 #predictor
+    h=np.zeros(L)
+    e = predictor.nlmslosslesspredenc(samples,L,h)
+    
+    
+    prederror = np.concatenate((e, [0,0,0,0]), axis = 0)
+    signedrice = Rice.rice_tag(4, signed=True)
+
+    errors = np.concatenate((prederror, np.zeros((4,))), axis=0)
+    
+    stream = bitstream.BitStream(errors.astype(np.int32), signedrice)
+    prederrors=stream.read(bytes, np.floor(len(stream)/8.0))
+    
+    n = len(prederrors)
+
+    file.writeInt(1, 0)
+    file.writeInt(16, n) # rice coding
+    file.writeInt(1, 0)
+    
+    for i in prederrors:
+        file.writeInt(8, i)
+        
             
             
         
