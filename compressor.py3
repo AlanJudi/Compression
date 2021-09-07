@@ -3,11 +3,10 @@ import pathlib
 import sys
 from BitOut import BitOutputStream
 from Reader import *
-from Rice import Ricer
+import Rice
+import bitstream
+import pickle
 import numpy as np
-import soundfile as sf
-from bitstream import BitStream
-from golomb_coding import golomb_coding
 import struct
 import math
 import Predictor as predictor
@@ -68,6 +67,9 @@ def encode_file(binary_input, out):
  
     numsamples = sampledatalen // (numchannels * (sampledepth // 8))
     
+    #register to bit stream
+    bitstream.register(Rice.rice_tag, writer=Rice.write_factory, reader=Rice.read_uint_factory)
+    
     
     out.writeInt(36, numsamples)
     for _ in range(16):
@@ -87,7 +89,7 @@ def encode_file(binary_input, out):
 
 
 
-def encodeFrame(binary_input, frameindex, numchannels, sampledepth, samplerate, blocksize, out):
+def encodeFrame(binary_input, frameindex, numchannels, sampledepth, samplerate, blocksize, file):
     
     #Bytes per sample
     bytespersample = sampledepth // 8
@@ -104,21 +106,21 @@ def encodeFrame(binary_input, frameindex, numchannels, sampledepth, samplerate, 
             
             channelSamples.append(val*1.0) 
             
-    out.reset_crcs()
-    out.writeInt(14, 0x3FFE)
-    out.writeInt(1, 0)
-    out.writeInt(1, 0)
-    out.writeInt(4, 7)
-    out.writeInt(4, (14 if samplerate % 10 == 0 else 13))
-    out.writeInt(4, numchannels - 1)
-    out.writeInt(3, {8:1, 16:4, 24:6, 32:0}[sampledepth])
-    out.writeInt(1, 0)
-    out.writeInt(8, 0xFC | (frameindex >> 30))
+    file.reset_crcs()
+    file.writeInt(14, 0x3FFE)
+    file.writeInt(1, 0)
+    file.writeInt(1, 0)
+    file.writeInt(4, 7)
+    file.writeInt(4, (14 if samplerate % 10 == 0 else 13))
+    file.writeInt(4, numchannels - 1)
+    file.writeInt(3, {8:1, 16:4, 24:6, 32:0}[sampledepth])
+    file.writeInt(1, 0)
+    file.writeInt(8, 0xFC | (frameindex >> 30))
     for i in range(24, -1, -6):
-        out.writeInt(8, 0x80 | ((frameindex >> i) & 0x3F))
-    out.writeInt(16, blocksize - 1)
-    out.writeInt(16, samplerate // (10 if samplerate % 10 == 0 else 1))
-    out.writeInt(8, out.crc8)
+        file.writeInt(8, 0x80 | ((frameindex >> i) & 0x3F))
+    file.writeInt(16, blocksize - 1)
+    file.writeInt(16, samplerate // (10 if samplerate % 10 == 0 else 1))
+    file.writeInt(8, file.crc8)
     
                     
 
@@ -128,21 +130,35 @@ def encodeFrame(binary_input, frameindex, numchannels, sampledepth, samplerate, 
         h=np.zeros(L)
         e = predictor.nlmslosslesspredenc(samples[i],L,h)
         
-        
-        e = np.concatenate((e, [0,0,0,0]), axis = 0)
-        
-        out.writeInt(1, 0)
-        out.writeInt(6, 1)  
-        out.writeInt(1, 0)
-        
 
-        riced = Ricer(e, 4)
-        stream = BitStream(riced, np.int8)
+        prederror=np.reshape(e, (blocksize+L), order='F')
+        
+        #Rice coefficient         
+        meanabs=np.mean(np.abs(prederror),axis=0)    
+        ricecoefff=np.clip(np.floor(np.log2(meanabs)),0,None)      
+        ricecoeffc=np.clip(np.ceil(np.log2((meanabs+1)*2/3)),0,None) 
+        ricecoeff=np.round((ricecoeffc+ricecoefff)/2.0).astype(np.int8) #integer, 8bit 
+        print("ricecoeff=", ricecoeff) 
+        file.writeInt(ricecoeff, 8)
+        
+        
+        prederror = np.concatenate((prederror, [0,0,0,0]), axis = 0)
+        
+        file.writeInt(1, 0)
+        file.writeInt(6, 1)  
+        file.writeInt(1, 0)
+
+        signedrice = Rice.rice_tag(ricecoeff, signed=True)
+        errors = np.concatenate((prederror, np.zeros((4,))), axis=0)
+        stream = bitstream.BitStream(errors.astype(np.int32), signedrice)
         prederrors=stream.read(bytes, np.floor(len(stream)/8.0))
-        out.out.write(prederrors)
+        
+        pickle.dump(prederrors, file, None)
+        
+        
             
-    out.align_to_byte()
-    out.writeInt(16, out.crc16)
+    file.align_to_byte()
+    file.writeInt(16, file.crc16)
             
             
         
